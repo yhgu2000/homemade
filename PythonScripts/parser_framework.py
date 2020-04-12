@@ -4,7 +4,7 @@
 #
 # 文件: parser_framework.py
 # 说明：这是我所有python指令脚本的参数解析框架
-# 版本: v2.0 (2020-4-12)
+# 版本: v2.1 (2020-4-12)
 #
 ################################################################################
 #
@@ -212,7 +212,7 @@ class Parser:
             if option_block.option.priority != 0:
                 return
         # 如果for循环结束则说明没有动作参数，执行默认动作参数
-        self.default_execute_option.executer([])
+        self.default_execute_option.execute([])
         return
 
 
@@ -235,6 +235,8 @@ class Parser:
 def auto_process(parser:Parser,sys_argv:list):
     """自动解析、检查、执行并且处理异常
 
+    自动忽略sys_argv[0]
+
     参数：
         sys_argv:   系统传入参数，即sys.argv
 
@@ -245,7 +247,7 @@ def auto_process(parser:Parser,sys_argv:list):
         不会产生参数相关异常
     """
     try:
-        parser.parse(sys_argv)
+        parser.parse(sys_argv[1::])
         parser.check()
         parser.execute()
     except InvalidOption as err:

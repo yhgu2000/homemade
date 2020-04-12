@@ -4,7 +4,7 @@
 #
 # 文件: recode.py
 # 说明：文本文件编码处理脚本
-# 版本: v2.0 (2020-4-12)
+# 版本: v2.1 (2020-4-12)
 #
 ################################################################################
 #
@@ -22,24 +22,23 @@ from_encoding = {"GB2312","UTF-8-SIG"}  # 源编码集
 to_encoding = "UTF-8"                   # 目标编码
 recursive_flag = False                  # 递归标志
 
+
 #
 def info():
     """输出脚本信息
     """
-    print("""recode.py v2.0
+    print("""recode.py v2.1
 Copyright (c) 2019-2020 by Yuhao Gu. All rights reserved.
-For help, use option "-h".""")
+For help, use option "-h".
+""")
     return
 
 
 def detect_encoding(file_path:str):
-    """判断给定路径文件的编码
+    """判断指定路径文件的编码
     """
-    if from_encoding is None:
-        with open(file_path,"rb") as f:
-            return chardet.detect(f.read(detect_size))["encoding"]
-    else:
-        return from_encoding
+    with open(file_path,"rb") as f:
+        return chardet.detect(f.read(detect_size))["encoding"]
     return
 
 
@@ -75,10 +74,10 @@ class MainOption(parf.Option):
 
     def check(self, args):
         global path
-        if len(args) >= 3:
+        if len(args) >= 2:
             raise parf.UnexpectedArgument(args[2])
-        elif len(args) == 2:
-            path = args[1]
+        elif len(args) == 1:
+            path = args[0]
             if (not check_path(path)):
                 raise parf.InvalidArgument("invalid path: \"" + path + "\"")
         return
@@ -132,10 +131,10 @@ class ListOption(parf.Option):
                         try:
                             my_path = os.path.join(root,i)
                             encoding = detect_encoding(my_path)
-                            print(encoding,'-',my_path)
+                            print("[",encoding,"] ",my_path,sep="")
                             add_counter(counter,encoding)
                         except:
-                            print("[SKIPPED]",my_path)
+                            print("<SKIPPED>",my_path)
                             add_counter(counter,"SKIPPED")
             # 否则只遍历当前文件夹
             else:
@@ -144,10 +143,10 @@ class ListOption(parf.Option):
                     if os.path.isfile(my_path):
                         try:
                             encoding = detect_encoding(my_path)
-                            print(encoding,'-',my_path)
+                            print("[",encoding,"] ",my_path,sep="")
                             add_counter(counter,encoding)
                         except:
-                            print("[SKIPPED]",my_path)
+                            print("<SKIPPED>",my_path)
                             add_counter(counter,"SKIPPED")
             print()
             print("Total:")
@@ -172,20 +171,33 @@ class AutoOption(parf.Option):
     def __init__(self, priority):
         return super().__init__(priority)
 
+    def check(self, args):
+        global path
+        if len(args) == 0:
+            return
+        if len(args) == 1:
+            path = args[0]
+            if (not check_path(path)):
+                raise parf.InvalidArgument("invalid path: \"" + path + "\"")
+            return
+        raise parf.UnexpectedArgument(args[1])
+        return
+
     def execute(self, args):
         global path
         global detect_size
         global to_encoding
         global option_map
+        global from_encoding
         # 如果目标是文件
         if os.path.isfile(path):
             try:
                 encoding = detect_encoding(path)
-                if encoding in from_encodings:
+                if encoding in from_encoding:
                     recode_file(path,encoding,to_encoding)
                     print(encoding,"->",to_encoding,'-',path)
                 else:
-                    print("encoding \"",encoding,"\" is not in from encodings.",
+                    print("encoding \"",encoding,"\" is not in from encodings",
                           sep="")
                     print("nothing to do.")
             except Exception as e:
@@ -200,7 +212,7 @@ class AutoOption(parf.Option):
                         try:
                             my_path = os.path.join(root,i)
                             encoding = detect_encoding(my_path)
-                            if encoding in from_encodings:
+                            if encoding in from_encoding:
                                 recode_file(my_path,encoding,to_encoding)
                                 print(encoding,"->",to_encoding,'-',my_path)
                                 add_counter(counter,encoding)
@@ -214,7 +226,7 @@ class AutoOption(parf.Option):
                     if os.path.isfile(my_path):
                         try:
                             encoding = detect_encoding(my_path)
-                            if encoding in from_encodings:
+                            if encoding in from_encoding:
                                 recode_file(my_path,encoding,to_encoding)
                                 print(encoding,"->",to_encoding,'-',my_path)
                                 add_counter(counter,encoding)
@@ -331,13 +343,15 @@ class HelpOption(parf.Option):
 A script tool for text file encoding.
 
 Options:
+    -       set path.
     -h      show help.
     -f      set from encoding.
     -t      set target encoding.
     -r      recursive mode.
-    -ds     set detective size, default: 1024.
+    -ds     set detective size, default: 1024(Byte).
     -l      list encoding of a file or files in a folder.
-    -a      auto detect encoding and recode to target encoding.""")
+    -a      auto detect encoding and recode to target encoding.
+""")
         return
 
 help_option = HelpOption(-1)
@@ -351,7 +365,7 @@ class DefaultOption(parf.Option):
     def __init__(self):
         return super().__init__(1)
 
-    def execute(args):
+    def execute(self,args):
         global from_encoding
         if len(from_encoding) != 1:
             raise parf.InvalidArgument("-f <encoding>")
