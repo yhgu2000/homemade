@@ -12,7 +12,7 @@
     <Name>PythonScripts</Name>
     <RootNamespace>PythonScripts</RootNamespace>
     <LaunchProvider>Standard Python launcher</LaunchProvider>
-    <CommandLineArguments>C:\Users\GuYuhao\Desktop\新建文件夹 -a UTF-8 -t GB2312</CommandLineArguments>
+    <CommandLineArguments>C:\Users\GuYuhao\Desktop\新建文件夹 -f UTF-8 -a -t GB2312</CommandLineArguments>
     <EnableNativeCodeDebugging>False</EnableNativeCodeDebugging>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
