@@ -1,4 +1,4 @@
-﻿################################################################################
+################################################################################
 #
 # 版权所有 (c) 2019-2020 顾宇浩。保留所有权利。
 #
@@ -7,20 +7,18 @@
 # 版本: v2.2 (2020-5-15)
 #
 ################################################################################
-#
-#
+
 import parser_framework as parf
 import os
 import sys
 import chardet
 import codecs
 
-
-path = "."                              # 全局操作路径/文件
-detect_size = 1024                      # 文件检查的读取大小
-from_encoding = {"GB2312","utf-8"}      # 源编码集
-to_encoding = "UTF-8-SIG"               # 目标编码
-recursive_flag = False                  # 递归标志
+path = "."  # 全局操作路径/文件
+detect_size = 1024  # 文件检查的读取大小
+from_encoding = {"GB2312", "UTF-8-SIG"}  # 源编码集
+to_encoding = "UTF-8"  # 目标编码
+recursive_flag = False  # 递归标志
 
 
 #
@@ -34,25 +32,25 @@ For help, use option "-h".
     return
 
 
-def detect_encoding(file_path:str):
+def detect_encoding(file_path: str):
     """判断指定路径文件的编码
     """
-    with open(file_path,"rb") as f:
+    with open(file_path, "rb") as f:
         return chardet.detect(f.read(detect_size))["encoding"]
     return
 
 
-def recode_file(file_path:str,from_encoding:str,to_encoding:str):
+def recode_file(file_path: str, from_encoding: str, to_encoding: str):
     """按照给定源编码和目标编码重新编码文件
     """
-    with open(file_path,"r",encoding = from_encoding) as f:
+    with open(file_path, "r", encoding=from_encoding) as f:
         content = f.read()
-    with open(file_path,"w",encoding = to_encoding) as f:
+    with open(file_path, "w", encoding=to_encoding) as f:
         f.write(content)
     return
 
 
-def add_counter(counter:dict,key):
+def add_counter(counter: dict, key):
     """计数器加1
     """
     try:
@@ -62,7 +60,7 @@ def add_counter(counter:dict,key):
     return
 
 
-def check_path(path:str):
+def check_path(path: str):
     return os.path.isdir(path) or os.path.isfile(path)
 
 
@@ -84,6 +82,7 @@ class MainOption(parf.Option):
 
     def execute(self, args):
         return
+
 
 main_option = MainOption(0)
 
@@ -109,7 +108,7 @@ class ListOption(parf.Option):
         raise parf.UnexpectedArgument(args[1])
         return
 
-    def execute(self,args):
+    def execute(self, args):
         global path
         global detect_size
         global from_encoding
@@ -118,44 +117,45 @@ class ListOption(parf.Option):
         # 如果目标是文件
         if os.path.isfile(path):
             try:
-                print(detect_encoding(path),'-',path)
+                print(detect_encoding(path), '-', path)
             except Exception as e:
                 print(e)
         # 如果目标是目录
         else:
-            counter = {"SKIPPED":0}
+            counter = {"SKIPPED": 0}
             # 如果要求递归
             if recursive_flag:
-                for root,dirs,files in os.walk(path):
+                for root, dirs, files in os.walk(path):
                     for i in files:
                         try:
-                            my_path = os.path.join(root,i)
+                            my_path = os.path.join(root, i)
                             encoding = detect_encoding(my_path)
-                            print("[",encoding,"] ",my_path,sep="")
-                            add_counter(counter,encoding)
+                            print("[", encoding, "] ", my_path, sep="")
+                            add_counter(counter, encoding)
                         except:
-                            print("<SKIPPED>",my_path)
-                            add_counter(counter,"SKIPPED")
+                            print("<SKIPPED>", my_path)
+                            add_counter(counter, "SKIPPED")
             # 否则只遍历当前文件夹
             else:
                 for i in os.listdir(path):
-                    my_path = os.path.join(path,i)
+                    my_path = os.path.join(path, i)
                     if os.path.isfile(my_path):
                         try:
                             encoding = detect_encoding(my_path)
-                            print("[",encoding,"] ",my_path,sep="")
-                            add_counter(counter,encoding)
+                            print("[", encoding, "] ", my_path, sep="")
+                            add_counter(counter, encoding)
                         except:
-                            print("<SKIPPED>",my_path)
-                            add_counter(counter,"SKIPPED")
+                            print("<SKIPPED>", my_path)
+                            add_counter(counter, "SKIPPED")
             print()
             print("Total:")
             if counter["SKIPPED"] != 0:
-                print("%16s" % "SKIPPED",'=',counter["SKIPPED"])
+                print("%16s" % "SKIPPED", '=', counter["SKIPPED"])
             counter.pop("SKIPPED")
-            for key,value in counter.items():
-                print("%16s" % key,'=',value)
+            for key, value in counter.items():
+                print("%16s" % key, '=', value)
         return
+
 
 list_option = ListOption(1)
 
@@ -194,58 +194,63 @@ class AutoOption(parf.Option):
             try:
                 encoding = detect_encoding(path)
                 if encoding in from_encoding:
-                    recode_file(path,encoding,to_encoding)
-                    print(encoding,"->",to_encoding,'-',path)
+                    recode_file(path, encoding, to_encoding)
+                    print(encoding, "->", to_encoding, '-', path)
                 else:
-                    print("encoding \"",encoding,"\" is not in from encodings",
+                    print("encoding \"",
+                          encoding,
+                          "\" is not in from encodings",
                           sep="")
                     print("nothing to do.")
             except Exception as e:
                 print(e)
         # 如果目标是目录
         else:
-            counter = {"SKIPPED":0}
+            counter = {"SKIPPED": 0}
             # 如果要求递归
             if recursive_flag:
-                for root,dirs,files in os.walk(path):
+                for root, dirs, files in os.walk(path):
                     for i in files:
                         try:
-                            my_path = os.path.join(root,i)
+                            my_path = os.path.join(root, i)
                             encoding = detect_encoding(my_path)
                             if encoding in from_encoding:
-                                recode_file(my_path,encoding,to_encoding)
-                                print(encoding,"->",to_encoding,'-',my_path)
-                                add_counter(counter,encoding)
+                                recode_file(my_path, encoding, to_encoding)
+                                print(encoding, "->", to_encoding, '-',
+                                      my_path)
+                                add_counter(counter, encoding)
                         except:
-                            print("[SKIPPED]",my_path)
-                            add_counter(counter,"SKIPPED")
+                            print("[SKIPPED]", my_path)
+                            add_counter(counter, "SKIPPED")
             # 否则只处理目标目录
             else:
                 for i in os.listdir(path):
-                    my_path = os.path.join(path,i)
+                    my_path = os.path.join(path, i)
                     if os.path.isfile(my_path):
                         try:
                             encoding = detect_encoding(my_path)
                             if encoding in from_encoding:
-                                recode_file(my_path,encoding,to_encoding)
-                                print(encoding,"->",to_encoding,'-',my_path)
-                                add_counter(counter,encoding)
+                                recode_file(my_path, encoding, to_encoding)
+                                print(encoding, "->", to_encoding, '-',
+                                      my_path)
+                                add_counter(counter, encoding)
                         except:
-                            print("[SKIPPED]",my_path)
-                            add_counter(counter,"SKIPPED")
+                            print("[SKIPPED]", my_path)
+                            add_counter(counter, "SKIPPED")
             print()
-            print("Recode to:",to_encoding)
+            print("Recode to:", to_encoding)
             print("Total:")
             if counter["SKIPPED"] != 0:
-                print("%16s" % "SKIPPED",'=',counter["SKIPPED"])
+                print("%16s" % "SKIPPED", '=', counter["SKIPPED"])
             counter.pop("SKIPPED")
-            for key,value in counter.items():
-                print("%16s" % key,'=',value)
+            for key, value in counter.items():
+                print("%16s" % key, '=', value)
         return
+
 
 auto_option = AutoOption(2)
 
-   
+
 class RecursiveOption(parf.Option):
     """-r 选项
     
@@ -259,6 +264,7 @@ class RecursiveOption(parf.Option):
         recursive_flag = True
         return
 
+
 recursive_option = RecursiveOption(0)
 
 
@@ -270,15 +276,16 @@ class FromOption(parf.Option):
     def __init__(self, priority):
         return super().__init__(priority)
 
-    def check(self,args):
+    def check(self, args):
         if len(args) < 1:
             raise parf.MissingArgument("-f")
         return
 
-    def execute(self,args):
+    def execute(self, args):
         global from_encoding
         from_encoding = set(args)
         return
+
 
 from_option = FromOption(0)
 
@@ -303,6 +310,7 @@ class ToOption(parf.Option):
         to_encoding = args[0]
         return
 
+
 to_option = ToOption(0)
 
 
@@ -311,7 +319,7 @@ class DetectSizeOption(parf.Option):
 
     设定文件采样大小
     """
-    def __init__(self,priority):
+    def __init__(self, priority):
         return super().__init__(priority)
 
     def check(self, args):
@@ -321,10 +329,11 @@ class DetectSizeOption(parf.Option):
             raise parf.InvalidArgument("-ds option needs an integer.")
         return
 
-    def execute(self,args):
+    def execute(self, args):
         global detect_size
         detect_size = int(args[0])
         return
+
 
 detect_size_option = DetectSizeOption(0)
 
@@ -334,10 +343,10 @@ class HelpOption(parf.Option):
 
     输出帮助信息
     """
-    def __init__(self,priority):
+    def __init__(self, priority):
         return super().__init__(priority)
 
-    def execute(self,args):
+    def execute(self, args):
         print("""Help for recode.py
 
 A script tool for text file encoding.
@@ -354,6 +363,7 @@ Options:
 """)
         return
 
+
 help_option = HelpOption(-1)
 
 
@@ -365,29 +375,33 @@ class DefaultOption(parf.Option):
     def __init__(self):
         return super().__init__(1)
 
-    def execute(self,args):
+    def execute(self, args):
         global from_encoding
         if len(from_encoding) != 1:
             raise parf.InvalidArgument("-f <encoding>")
         for encoding in from_encoding:
-            recode_file(path,encoding,to_encoding)
+            recode_file(path, encoding, to_encoding)
         return
+
 
 default_option = DefaultOption()
 
 
 def main():
-    option_map = {"-":main_option,
-                  "-h":help_option,
-                  "-f":from_option,
-                  "-t":to_option,
-                  "-r":recursive_option,
-                  "-ds":detect_size_option,
-                  "-l":list_option,
-                  "-a":auto_option}
-    p = parf.Parser(option_map,default_option,info)
-    parf.auto_process(p,sys.argv)
+    option_map = {
+        "-": main_option,
+        "-h": help_option,
+        "-f": from_option,
+        "-t": to_option,
+        "-r": recursive_option,
+        "-ds": detect_size_option,
+        "-l": list_option,
+        "-a": auto_option
+    }
+    p = parf.Parser(option_map, default_option, info)
+    parf.auto_process(p, sys.argv)
     return
+
 
 if __name__ == "__main__":
     main()
