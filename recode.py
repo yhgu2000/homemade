@@ -1,407 +1,230 @@
-################################################################################
-#
-# 版权所有 (c) 2019-2020 顾宇浩。保留所有权利。
-#
-# 文件: recode.py
-# 说明：文本文件编码处理脚本
-# 版本: v2.2 (2020-5-15)
-#
-################################################################################
+__version__ = "3.0 (2021-10-29)"
+__copyright__ = """recode v%(version)s
 
-import parser_framework as parf
-import os
-import sys
-import chardet
-import codecs
-
-path = "."  # 全局操作路径/文件
-detect_size = 1024  # 文件检查的读取大小
-from_encoding = {"GB2312", "UTF-8-SIG"}  # 源编码集
-to_encoding = "UTF-8"  # 目标编码
-recursive_flag = False  # 递归标志
-
-
-#
-def info():
-    """输出脚本信息
-    """
-    print("""recode.py v2.1
 Copyright (c) 2019-2020 by Yuhao Gu. All rights reserved.
-For help, use option "-h".
-""")
-    return
+"""
+
+import os
+from collections import Counter
+from fnmatch import fnmatch
+from typing import Union
+
+import chardet
+import click
+
+default_from_encodings = (
+    "UTF-8",
+    "UTF-8-SIG",
+    "BIG5",
+    "GB2312",
+    "GB18030",
+    "EUC-TW",
+    "HZ-GB-2312",
+    "ISO-2022-CN",
+)
 
 
-def detect_encoding(file_path: str):
-    """判断指定路径文件的编码
-    """
+class UnkownEncoding(RuntimeError):
+    pass
+
+
+def detect_encoding(file_path: str) -> str:
     with open(file_path, "rb") as f:
-        return chardet.detect(f.read(detect_size))["encoding"]
-    return
+        s = f.read(4096)
+    ans = chardet.detect(s)
+    if ans["confidence"] < 0.8:
+        raise UnkownEncoding()
+    return ans["encoding"].upper()
 
 
-def recode_file(file_path: str, from_encoding: str, to_encoding: str):
-    """按照给定源编码和目标编码重新编码文件
+def translate_newlines(newlines: Union[str, tuple, None]) -> str:
+    codec = {"\r": "CR", "\n": "LF", "\r\n": "CRLF"}
+    if type(newlines) is str:
+        return codec[newlines]
+    elif type(newlines) is tuple:
+        return ",".join(map(codec.__getitem__, newlines))
+    return "NONE"
+
+
+@click.command()
+@click.version_option(__version__, message=__copyright__)
+@click.argument(
+    "pathes",
+    nargs=-1,
+    type=click.Path(exists=True, writable=True),
+)
+@click.option(
+    "-r",
+    "--recursive",
+    help="Search directory recursively.",
+    type=click.Path(exists=True, file_okay=False),
+    multiple=True,
+)
+@click.option(
+    "--include",
+    help="Only include files that matches this pattern.",
+    default="*",
+)
+@click.option(
+    "--exclude",
+    help="Exclude files that matches this pattern.",
+    default="",
+)
+@click.option(
+    "-f",
+    "--from",
+    "froms",
+    help=f"Source encodings. Default: {','.join(default_from_encodings)}",
+    default=default_from_encodings,
+    multiple=True,
+)
+@click.option(
+    "-t",
+    "--to",
+    help="Recode to target encoding.",
+    type=str,
+)
+@click.option(
+    "-n",
+    "--newline",
+    "eof",
+    help="Reformat to target end of line.",
+    type=click.Choice(
+        ["CR", "LF", "CRLF"],
+        case_sensitive=False,
+    ),
+)
+@click.option(
+    "-e",
+    "--encoding",
+    "force_encoding",
+    help="Specify source encoding.",
+    type=str,
+)
+def cli(
+    pathes: tuple[str],
+    recursive: tuple[str],
+    include: str,
+    exclude: str,
+    froms: tuple[str],
+    to: str,
+    eof: str,
+    force_encoding: str,
+):
+    """文本文件重编码脚本，具备编码识别、指定输出编码、行尾格式化功能。
+
+    \b
+    1. 转换一个文件的编码和行尾
+        recode file -t utf-8 --eof=LF
+    \b
+    2. （递归）识别目录里所有文件的编码，将符合的源编码转换到目标编码
+        recode dir1 -r dir2 -f gb2312 big5 -t utf-8
+    \b
+    3. 强制指定源编码
+        recode file -r dir -e gb2312 -t utf-8
+    \b
+    4. 保持原编码，只修改行尾
+        recode file dir --eof=CR
+    \b
+    5. 模式包含与排除，同时匹配时，优先选择排除
+        recode -r dir1 dir2 --include "a*" --exclude "*.cpp"
     """
-    with open(file_path, "r", encoding=from_encoding) as f:
-        content = f.read()
-    with open(file_path, "w", encoding=to_encoding) as f:
-        f.write(content)
-    return
 
+    def match(name):
+        return not fnmatch(name, exclude) and fnmatch(name, include)
 
-def add_counter(counter: dict, key):
-    """计数器加1
-    """
-    try:
-        counter[key] += 1
-    except KeyError:
-        counter[key] = 1
-    return
+    def gen_matched_files():
+        for path in pathes:
+            if os.path.isfile(path):
+                if match(os.path.basename(path)):
+                    yield path
 
+            elif os.path.isdir(path):
+                for name in os.listdir(path):
+                    full_path = os.path.join(path, name)
+                    if match(name) and os.path.isfile(full_path):
+                        yield full_path
 
-def check_path(path: str):
-    return os.path.isdir(path) or os.path.isfile(path)
-
-
-class MainOption(parf.Option):
-    """主选项
-    """
-    def __init__(self, priority):
-        return super().__init__(priority)
-
-    def check(self, args):
-        global path
-        if len(args) >= 2:
-            raise parf.UnexpectedArgument(args[2])
-        elif len(args) == 1:
-            path = args[0]
-            if (not check_path(path)):
-                raise parf.InvalidArgument("invalid path: \"" + path + "\"")
+        for dir in recursive:
+            for path, _, files in os.walk(dir):
+                for file in files:
+                    if match(file):
+                        yield os.path.join(path, file)
         return
 
-    def execute(self, args):
-        return
+    results = Counter()
 
+    if to:
+        to = to.upper()
+    if eof:
+        newline = {"CR": "\r", "LF": "\n", "CRLF": "\r\n"}[eof]
 
-main_option = MainOption(0)
+    for path in gen_matched_files():
+        try:
+            result = None
 
-
-class ListOption(parf.Option):
-    """-l 选项
-
-    如果是文件，列出该文件的编码；
-    如果是目录，列出目录下所有文件的编码。
-    """
-    def __init__(self, priority):
-        return super().__init__(priority)
-
-    def check(self, args):
-        global path
-        if len(args) == 0:
-            return
-        if len(args) == 1:
-            path = args[0]
-            if (not check_path(path)):
-                raise parf.InvalidArgument("invalid path: \"" + path + "\"")
-            return
-        raise parf.UnexpectedArgument(args[1])
-        return
-
-    def execute(self, args):
-        global path
-        global detect_size
-        global from_encoding
-        global to_encoding
-        global option_map
-        # 如果目标是文件
-        if os.path.isfile(path):
-            try:
-                print(detect_encoding(path), '-', path)
-            except Exception as e:
-                print(e)
-        # 如果目标是目录
-        else:
-            counter = {"SKIPPED": 0}
-            # 如果要求递归
-            if recursive_flag:
-                for root, dirs, files in os.walk(path):
-                    for i in files:
-                        try:
-                            my_path = os.path.join(root, i)
-                            encoding = detect_encoding(my_path)
-                            print("[", encoding, "] ", my_path, sep="")
-                            add_counter(counter, encoding)
-                        except:
-                            print("<SKIPPED>", my_path)
-                            add_counter(counter, "SKIPPED")
-            # 否则只遍历当前文件夹
-            else:
-                for i in os.listdir(path):
-                    my_path = os.path.join(path, i)
-                    if os.path.isfile(my_path):
-                        try:
-                            encoding = detect_encoding(my_path)
-                            print("[", encoding, "] ", my_path, sep="")
-                            add_counter(counter, encoding)
-                        except:
-                            print("<SKIPPED>", my_path)
-                            add_counter(counter, "SKIPPED")
-            print()
-            print("Total:")
-            if counter["SKIPPED"] != 0:
-                print("%16s" % "SKIPPED", '=', counter["SKIPPED"])
-            counter.pop("SKIPPED")
-            for key, value in counter.items():
-                print("%16s" % key, '=', value)
-        return
-
-
-list_option = ListOption(1)
-
-
-class AutoOption(parf.Option):
-    """-a 选项
-
-    判断文件是否符合转换编码，如果是，则转换到目标编码。
-
-    如果是文件，则转换该文件；
-    如果是目录，则转换目录下的所有可识别编码文件。
-    """
-    def __init__(self, priority):
-        return super().__init__(priority)
-
-    def check(self, args):
-        global path
-        if len(args) == 0:
-            return
-        if len(args) == 1:
-            path = args[0]
-            if (not check_path(path)):
-                raise parf.InvalidArgument("invalid path: \"" + path + "\"")
-            return
-        raise parf.UnexpectedArgument(args[1])
-        return
-
-    def execute(self, args):
-        global path
-        global detect_size
-        global to_encoding
-        global option_map
-        global from_encoding
-        # 如果目标是文件
-        if os.path.isfile(path):
-            try:
+            if not force_encoding:
                 encoding = detect_encoding(path)
-                if encoding in from_encoding:
-                    recode_file(path, encoding, to_encoding)
-                    print(encoding, "->", to_encoding, '-', path)
+
+            if to is None:
+                if eof is None:
+                    # 什么都不做模式，只统计文本编码
+                    result = click.style(f"[{encoding}]", fg="green")
+
                 else:
-                    print("encoding \"",
-                          encoding,
-                          "\" is not in from encodings",
-                          sep="")
-                    print("nothing to do.")
-            except Exception as e:
-                print(e)
-        # 如果目标是目录
-        else:
-            counter = {"SKIPPED": 0}
-            # 如果要求递归
-            if recursive_flag:
-                for root, dirs, files in os.walk(path):
-                    for i in files:
-                        try:
-                            my_path = os.path.join(root, i)
-                            encoding = detect_encoding(my_path)
-                            if encoding in from_encoding:
-                                recode_file(my_path, encoding, to_encoding)
-                                print(encoding, "->", to_encoding, '-',
-                                      my_path)
-                                add_counter(counter, encoding)
-                        except:
-                            print("[SKIPPED]", my_path)
-                            add_counter(counter, "SKIPPED")
-            # 否则只处理目标目录
+                    # 只格式化行尾
+                    with open(path, "r", encoding=encoding) as f:
+                        s = f.read()
+                        if f.newlines == newline:
+                            result = click.style("[SKIPPED]", fg="green")
+                        else:
+                            newlines = translate_newlines(f.newlines)
+                    if result is None:
+                        with open(
+                            path, "w", encoding=encoding, newline=newline
+                        ) as f:
+                            f.write(s)
+                        result = click.style(
+                            f"[{newlines}->{eof}]", fg="green"
+                        )
+
             else:
-                for i in os.listdir(path):
-                    my_path = os.path.join(path, i)
-                    if os.path.isfile(my_path):
-                        try:
-                            encoding = detect_encoding(my_path)
-                            if encoding in from_encoding:
-                                recode_file(my_path, encoding, to_encoding)
-                                print(encoding, "->", to_encoding, '-',
-                                      my_path)
-                                add_counter(counter, encoding)
-                        except:
-                            print("[SKIPPED]", my_path)
-                            add_counter(counter, "SKIPPED")
-            print()
-            print("Recode to:", to_encoding)
-            print("Total:")
-            if counter["SKIPPED"] != 0:
-                print("%16s" % "SKIPPED", '=', counter["SKIPPED"])
-            counter.pop("SKIPPED")
-            for key, value in counter.items():
-                print("%16s" % key, '=', value)
-        return
+                # 全功能模式
+                if encoding == to:
+                    result = click.style("[SKIPPED]", fg="green")
+                elif encoding not in froms:
+                    result = click.style(
+                        f"[{encoding}]", fg="black", bg="yellow"
+                    )
+                else:
+                    with open(path, "r", encoding=encoding) as f:
+                        content = f.read()
+                    with open(path, "w", encoding=to, newline=eof) as f:
+                        f.write(content)
+                    result = click.style(f"[{encoding}->{to}]", fg="green")
 
+        except BaseException as e:
+            result = click.style(f"[{type(e).__name__}]", bg="red")
 
-auto_option = AutoOption(2)
+        results[result] += 1
+        click.echo(result + " " + path)
 
-
-class RecursiveOption(parf.Option):
-    """-r 选项
-    
-    开启递归
-    """
-    def __init__(self, priority):
-        return super().__init__(priority)
-
-    def execute(self, args):
-        global recursive_flag
-        recursive_flag = True
-        return
-
-
-recursive_option = RecursiveOption(0)
-
-
-class FromOption(parf.Option):
-    """-f 选项
-    
-    指定初始编码
-    """
-    def __init__(self, priority):
-        return super().__init__(priority)
-
-    def check(self, args):
-        if len(args) < 1:
-            raise parf.MissingArgument("-f")
-        return
-
-    def execute(self, args):
-        global from_encoding
-        from_encoding = set(args)
-        return
-
-
-from_option = FromOption(0)
-
-
-class ToOption(parf.Option):
-    """-t 选项
-
-    设定目标编码
-    """
-    def __init__(self, priority):
-        return super().__init__(priority)
-
-    def check(self, args):
-        if len(args) < 1:
-            raise parf.MissingArgument("-t")
-        elif len(args) > 1:
-            raise parf.UnexpectedArgument(args[1])
-        return
-
-    def execute(self, args):
-        global to_encoding
-        to_encoding = args[0]
-        return
-
-
-to_option = ToOption(0)
-
-
-class DetectSizeOption(parf.Option):
-    """-ds 选项
-
-    设定文件采样大小
-    """
-    def __init__(self, priority):
-        return super().__init__(priority)
-
-    def check(self, args):
-        if len(args) > 1:
-            raise parf.UnexpectedArgument(args[1])
-        if (len(args) < 1) or (not args[0].isnumeric()):
-            raise parf.InvalidArgument("-ds option needs an integer.")
-        return
-
-    def execute(self, args):
-        global detect_size
-        detect_size = int(args[0])
-        return
-
-
-detect_size_option = DetectSizeOption(0)
-
-
-class HelpOption(parf.Option):
-    """-h 选项
-
-    输出帮助信息
-    """
-    def __init__(self, priority):
-        return super().__init__(priority)
-
-    def execute(self, args):
-        print("""Help for recode.py
-
-A script tool for text file encoding.
-
-Options:
-    -       set path.
-    -h      show help.
-    -f      set from encoding.
-    -t      set target encoding.
-    -r      recursive mode.
-    -ds     set detective size, default: 1024(Byte).
-    -l      list encoding of a file or files in a folder.
-    -a      auto detect encoding and recode to target encoding.
-""")
-        return
-
-
-help_option = HelpOption(-1)
-
-
-class DefaultOption(parf.Option):
-    """默认执行选项
-
-    将文件从from_encoding重新编码到to_encoding
-    """
-    def __init__(self):
-        return super().__init__(1)
-
-    def execute(self, args):
-        global from_encoding
-        if len(from_encoding) != 1:
-            raise parf.InvalidArgument("-f <encoding>")
-        for encoding in from_encoding:
-            recode_file(path, encoding, to_encoding)
-        return
-
-
-default_option = DefaultOption()
-
-
-def main():
-    option_map = {
-        "-": main_option,
-        "-h": help_option,
-        "-f": from_option,
-        "-t": to_option,
-        "-r": recursive_option,
-        "-ds": detect_size_option,
-        "-l": list_option,
-        "-a": auto_option
-    }
-    p = parf.Parser(option_map, default_option, info)
-    parf.auto_process(p, sys.argv)
+    # 打印统计结果
+    if results:
+        click.echo("\nRESULTS:")
+        for result, count in results.items():
+            click.echo(f"\t{result}: {count}")
     return
+
+
+def test():
+    from click.testing import CliRunner
+
+    runner = CliRunner()
+    result = runner.invoke(cli, "-r . -eof LF")
+    return result
 
 
 if __name__ == "__main__":
-    main()
+    cli()
+    # print(test())
