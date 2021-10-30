@@ -1,4 +1,4 @@
-__version__ = "3.4 (2021-10-30)"
+__version__ = "3.5 (2021-10-30)"
 __copyright__ = """recode v%(version)s
 
 Copyright (c) 2019-2020 by Yuhao Gu. All rights reserved.
@@ -82,19 +82,19 @@ def atomic_rewrite(path: str, s: str, encoding, newline):
 )
 @click.option(
     "--include",
-    help="Only include files that matches this pattern.",
+    help="Only Include files whose name matches this regex. Default: '.*'.",
     default=".*",
 )
 @click.option(
     "--exclude",
-    help="Exclude files that matches this pattern.",
+    help="Exclude files whose path contains this regex. Default: '^$'.",
     default="^$",
 )
 @click.option(
     "-f",
     "--from",
     "froms",
-    help=f"Source encodings. Default: {','.join(default_from_encodings)}",
+    help=f"Source encodings. Default: {', '.join(default_from_encodings)}.",
     default=default_from_encodings,
     multiple=True,
 )
@@ -155,11 +155,7 @@ def cli(
 
     def match(path):
         name = os.path.basename(path)
-        return (
-            include.match(name)
-            and not exclude.match(name)
-            and not exclude.search(path)
-        )
+        return include.match(name) and not exclude.search(path)
 
     def gen_matched_files():
         for path in pathes:
