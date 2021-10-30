@@ -1,4 +1,4 @@
-__version__ = "3.1 (2021-10-29)"
+__version__ = "3.2 (2021-10-30)"
 __copyright__ = """recode v%(version)s
 
 Copyright (c) 2019-2020 by Yuhao Gu. All rights reserved.
@@ -37,6 +37,12 @@ def detect_encoding(file_path: str) -> str:
     return ans["encoding"].upper()
 
 
+def detect_newlines(file_path: str, encoding: str):
+    with open(file_path, "r", encoding=encoding) as f:
+        f.read(4096)
+    return f.newlines
+
+
 def translate_newlines(newlines: Union[str, tuple, None]) -> str:
     codec = {"\r": "CR", "\n": "LF", "\r\n": "CRLF"}
     if type(newlines) is str:
@@ -46,7 +52,7 @@ def translate_newlines(newlines: Union[str, tuple, None]) -> str:
     return "NONE"
 
 
-def atomic_write(path: str, s: str, encoding: str, newline: str):
+def atomic_rewrite(path: str, s: str, encoding, newline):
     temp = path + "~~~~~"
     try:
         with open(temp, "w", encoding=encoding, newline=newline) as f:
@@ -166,58 +172,127 @@ def cli(
                         yield os.path.join(path, file)
         return
 
-    results = Counter()
+    if not to and not eof:
+        # 什么都不做模式：统计文本编码和换行符
+        encodings = Counter()
+        eofs = Counter()
+        errors = Counter()
 
-    if to:
-        to = to.upper()
-    if eof:
+        for path in gen_matched_files():
+            try:
+                encoding = detect_encoding(path)
+                encodings[click.style(f"[{encoding}]", fg="green")] += 1
+
+                eof = detect_newlines(path, encoding)
+                eofs[
+                    click.style(f"[{translate_newlines(eof)}]", fg="green")
+                ] += 1
+
+                result = click.style(f"[{encoding}, {translate_newlines(eof)}]", fg="green")
+
+            except BaseException as e:
+                result = click.style(f"[{type(e).__name__}]", bg="red")
+                errors[result] += 1
+
+            click.echo(result + " " + path)
+
+        if encodings:
+            click.echo("\nEncodings:")
+            for encoding, count in encodings.items():
+                click.echo(f"\t{encoding}: {count}")
+        if eofs:
+            click.echo("\nEOFs:")
+            for eof, count in eofs.items():
+                click.echo(f"\t{eof}: {count}")
+        if errors:
+            click.echo("\nErrors:")
+            for error, count in errors.items():
+                click.echo(f"\t{error}: {count}")
+        return
+
+    # 定制执行过程
+    if to and eof:
+        # 全功能模式
         newline = {"CR": "\r", "LF": "\n", "CRLF": "\r\n"}[eof]
-    else:
-        newline = None
 
-    for path in gen_matched_files():
-        try:
-            result = None
-
+        def process(path):
             if not force_encoding:
                 encoding = detect_encoding(path)
-
-            if to is None:
-                if eof is None:
-                    # 什么都不做模式，只统计文本编码
-                    result = click.style(f"[{encoding}]", fg="green")
-
-                else:
-                    # 只格式化行尾
-                    with open(path, "r", encoding=encoding) as f:
-                        content = f.read()
-                        if f.newlines == newline:
-                            result = click.style("[SKIPPED]", fg="green")
-                        else:
-                            newlines = translate_newlines(f.newlines)
-                    if result is None:
-                        atomic_write(path, content, encoding, newline)
-                        result = click.style(
-                            f"[{newlines} -> {eof}]", fg="green"
-                        )
-
-            else:
-                # 全功能模式
-                if encoding == to:
-                    result = click.style("[SKIPPED]", fg="green")
-                elif encoding not in froms:
-                    result = click.style(
+                if encoding not in froms:
+                    return click.style(
                         f"[{encoding}]", fg="black", bg="yellow"
                     )
-                else:
-                    with open(path, "r", encoding=encoding) as f:
-                        content = f.read()
-                    atomic_write(path, content, to, newline)
-                    result = click.style(f"[{encoding} -> {to}]", fg="green")
+            else:
+                encoding = force_encoding
 
+            with open(path, "r", encoding=encoding) as f:
+                content = f.read()
+
+            if encoding == to and f.newlines == newline:
+                return click.style("[SKIPPED]", fg="green")
+
+            if f.newlines == newline:
+                atomic_rewrite(path, content, to, "")
+                return click.style(f"[{encoding} -> {to}]", fg="green")
+
+            if encoding == to:
+                atomic_rewrite(path, content, encoding, newline)
+                return click.style(
+                    f"[{translate_newlines(f.newlines)} -> {eof}]", fg="green"
+                )
+
+            atomic_rewrite(path, content, to, newline)
+            return click.style(
+                f"[{encoding} -> {to}, "
+                + f"{translate_newlines(f.newlines)} -> {eof}]",
+                fg="green",
+            )
+
+    elif to:
+        # 只重新编码
+        def process(path):
+            if not force_encoding:
+                encoding = detect_encoding(path)
+            else:
+                encoding = force_encoding
+
+            if encoding == to:
+                return click.style("[SKIPPED]", fg="green")
+            if encoding not in froms:
+                return click.style(f"[{encoding}]", fg="black", bg="yellow")
+
+            with open(path, "r", encoding=encoding) as f:
+                content = f.read()
+            atomic_rewrite(path, content, to, "")
+            return click.style(f"[{encoding} -> {to}]", fg="green")
+
+    else:
+        # 只格式化行尾
+        newline = {"CR": "\r", "LF": "\n", "CRLF": "\r\n"}[eof]
+
+        def process(path):
+            if not force_encoding:
+                encoding = detect_encoding(path)
+            else:
+                encoding = force_encoding
+
+            with open(path, "r", encoding=encoding) as f:
+                content = f.read()
+            if f.newlines == newline:
+                return click.style("[SKIPPED]", fg="green")
+
+            atomic_rewrite(path, content, encoding, newline)
+            return click.style(
+                f"[{translate_newlines(f.newlines)} -> {eof}]", fg="green"
+            )
+
+    # 运行程序
+    results = Counter()
+    for path in gen_matched_files():
+        try:
+            result = process(path)
         except BaseException as e:
             result = click.style(f"[{type(e).__name__}]", bg="red")
-
         results[result] += 1
         click.echo(result + " " + path)
 
@@ -238,8 +313,8 @@ def test():
         [
             "-r",
             r"C:\Users\GuYuhao\Desktop\2",
-            "-t",
-            "gbk",
+            # "-t",
+            # "gbk",
         ],
     )
     return result
