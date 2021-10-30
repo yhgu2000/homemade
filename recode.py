@@ -1,4 +1,4 @@
-__version__ = "3.0 (2021-10-29)"
+__version__ = "3.1 (2021-10-29)"
 __copyright__ = """recode v%(version)s
 
 Copyright (c) 2019-2020 by Yuhao Gu. All rights reserved.
@@ -44,6 +44,20 @@ def translate_newlines(newlines: Union[str, tuple, None]) -> str:
     elif type(newlines) is tuple:
         return ",".join(map(codec.__getitem__, newlines))
     return "NONE"
+
+
+def atomic_write(path: str, s: str, encoding: str, newline: str):
+    temp = path + "~~~~~"
+    try:
+        with open(temp, "w", encoding=encoding, newline=newline) as f:
+            f.write(s)
+        os.remove(path)
+        os.rename(temp, path)
+    except BaseException as e:
+        if os.path.exists(temp):
+            os.remove(temp)
+        raise e
+    return
 
 
 @click.command()
@@ -158,6 +172,8 @@ def cli(
         to = to.upper()
     if eof:
         newline = {"CR": "\r", "LF": "\n", "CRLF": "\r\n"}[eof]
+    else:
+        newline = None
 
     for path in gen_matched_files():
         try:
@@ -174,18 +190,15 @@ def cli(
                 else:
                     # 只格式化行尾
                     with open(path, "r", encoding=encoding) as f:
-                        s = f.read()
+                        content = f.read()
                         if f.newlines == newline:
                             result = click.style("[SKIPPED]", fg="green")
                         else:
                             newlines = translate_newlines(f.newlines)
                     if result is None:
-                        with open(
-                            path, "w", encoding=encoding, newline=newline
-                        ) as f:
-                            f.write(s)
+                        atomic_write(path, content, encoding, newline)
                         result = click.style(
-                            f"[{newlines}->{eof}]", fg="green"
+                            f"[{newlines} -> {eof}]", fg="green"
                         )
 
             else:
@@ -199,9 +212,8 @@ def cli(
                 else:
                     with open(path, "r", encoding=encoding) as f:
                         content = f.read()
-                    with open(path, "w", encoding=to, newline=eof) as f:
-                        f.write(content)
-                    result = click.style(f"[{encoding}->{to}]", fg="green")
+                    atomic_write(path, content, to, newline)
+                    result = click.style(f"[{encoding} -> {to}]", fg="green")
 
         except BaseException as e:
             result = click.style(f"[{type(e).__name__}]", bg="red")
@@ -221,7 +233,15 @@ def test():
     from click.testing import CliRunner
 
     runner = CliRunner()
-    result = runner.invoke(cli, "-r . -eof LF")
+    result = runner.invoke(
+        cli,
+        [
+            "-r",
+            r"C:\Users\GuYuhao\Desktop\2",
+            "-t",
+            "gbk",
+        ],
+    )
     return result
 
 
