@@ -1,4 +1,4 @@
-__version__ = "3.3 (2021-10-30)"
+__version__ = "3.4 (2021-10-30)"
 __copyright__ = """recode v%(version)s
 
 Copyright (c) 2019-2020 by Yuhao Gu. All rights reserved.
@@ -32,7 +32,7 @@ def detect_encoding(file_path: str) -> str:
     with open(file_path, "rb") as f:
         s = f.read(4096)
     ans = chardet.detect(s)
-    if ans["confidence"] < 0.8:
+    if ans["confidence"] < 0.5:
         raise UnkownEncoding()
     return ans["encoding"].upper()
 
